@@ -36,7 +36,6 @@ else
     rm -rf OutputFiles/Pond_$Pond/$Year
     mkdir -p OutputFiles
 
-    echo $Pond
     cp TempRun/Figure.png OutputFiles/Pond${Pond}_$Year.png
     cp TempRun/Output.xlsx OutputFiles/Pond${Pond}_$Year.xlsx
     rm -rf TempRun

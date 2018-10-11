@@ -49,8 +49,23 @@ def ReadInput(E,O,H,T,A_H2,A_O18,StartDate):
     df_H2['Prec']=df['P_H2'].copy()
     df_H2['Atm']=A_H2
     df_H2['Pond']=0.
-    
-    return df.loc[df.index>StartDate], df_O18.loc[df.index>StartDate], df_H2.loc[df.index>StartDate]
+
+    # Truncate to start date
+    df=Truncate(df,StartDate) 
+    df_O18=Truncate(df_O18,StartDate) 
+    df_H2=Truncate(df_H2,StartDate) 
+
+    return df, df_O18, df_H2
+
+def Truncate(df,StartDate):
+    # Truncate a dataframe to start from Start Date
+    tb=pandas.date_range(start=StartDate,periods=1)
+    dfb=pandas.DataFrame(0,index=tb,columns=df.columns)
+    dfc=pandas.concat([df,dfb])
+    dfc.sort_index(inplace=True)
+    dfc = dfc[~dfc.index.duplicated(keep='first')]
+    dfc=dfc.iloc[dfc.index>=StartDate]
+    return dfc
 
 # Core model functions
 def PondDAV(pars,k=0.,V=0.,A=0.):
@@ -126,7 +141,6 @@ def ModelFun(E,O,k_i,del_i,dt,df,df_iso,pars,p_iso,alphafun):
     return k_t,del_t
 
 def RunModel(E,O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2):
-
     # Solve model
     df['k'][0]=k_ini
     df_O18['Pond'][0]=O18_ini
@@ -160,16 +174,18 @@ def ObFun_Level(depth,output):
     k_o=depth.values.squeeze()
     t_s=output.index
     k_s=output['k'].values.squeeze()
+    t_o=t_o.to_julian_date()
+    t_s=t_s.to_julian_date()
 
     if len(t_o) > len(t_s):
-        t=t_s.to_julian_date()
-        tx=t_o.to_julian_date()
+        t=t_s
+        tx=t_o
         tx=tx-t[0]
         t=t-t[0]
         k_o=np.interp(t,tx,k_o)
     else:
-        t=t_o.to_julian_date()
-        tx=t_s.to_julian_date()
+        t=t_o
+        tx=t_s
         tx=tx-t[0]
         t=t-t[0]
         k_s=np.interp(t,tx,k_s)
@@ -178,8 +194,9 @@ def ObFun_Level(depth,output):
     return RMSE
 
 # Functions for stage two - optimize the evaporation to isotope values
-def OptFun_Iso(E,EI,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2):
-    O = EI - E
+def OptFun_Iso(E,EO,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2):
+
+    O = EO - E
     
     output, df, df_O18, df_H2 = RunModel(E,O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2)
     RMSE_O18=ObFun_Iso(pond,output,'O18')/np.abs(pond['O18'].mean())
@@ -224,7 +241,7 @@ def SensiContourPlot(fn,levels,labels,mytitle):
             myline=f.readline().strip().split()
             k[j,i]=float(myline[1])
             Z[j,i]=float(myline[2])
-    EI=np.array([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9])
+    EO=np.array([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9])
 
     cmap=plt.cm.get_cmap('hot')
     xt=[0.6, 1.0, 1.4]
@@ -234,17 +251,17 @@ def SensiContourPlot(fn,levels,labels,mytitle):
     ax = fig.add_axes([0.15, 0.23, 0.84, 0.7])
     x=np.array([0.4, 0.8])
     z=np.array([Z[:,0],Z[:,0]]).transpose()
-    plt.contourf(x,EI,z,levels,cmap=cmap)
+    plt.contourf(x,EO,z,levels,cmap=cmap)
     x=np.array([0.8, 1.2])
     z=np.array([Z[:,1],Z[:,1]]).transpose()
-    plt.contourf(x,EI,z,levels,cmap=cmap)
+    plt.contourf(x,EO,z,levels,cmap=cmap)
     x=np.array([1.2, 1.6])
     z=np.array([Z[:,2],Z[:,2]]).transpose()
-    plt.contourf(x,EI,z,levels,cmap=cmap)
+    plt.contourf(x,EO,z,levels,cmap=cmap)
 
     ax.set_xticks(xt)
     ax.set_xticklabels(labels,fontsize=fs)
-    ax.set_yticklabels(EI,fontsize=fs)
+    ax.set_yticklabels(EO,fontsize=fs)
     plt.plot([0.8,0.8],[0.1,0.9],'-k')
     plt.plot([1.2,1.2],[0.1,0.9],'-k')
     plt.title(mytitle,fontsize=fs)
@@ -312,17 +329,17 @@ if ShallIOptimize==0:
 elif ShallIOptimize==1:
     # Optimize model to pond level and pond isotopic concentrations
     print "Stage one optimization: get total water loss from the pond"
-    EI = E + O
+    EO = E + O
     O = 0.
-    EI=optimize.fmin(func=OptFun_Level, x0=E,args=(O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2,))
+    EO=optimize.fmin(func=OptFun_Level, x0=E,args=(O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2,))
 
-    output, df, df_O18, df_H2 = RunModel(EI,O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2)
+    output, df, df_O18, df_H2 = RunModel(EO,O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2)
     RMSE1=ObFun_Level(depth,output)
 
     print "Stage two optimization: get evaporative loss from the pond"
-    E=optimize.fmin(func=OptFun_Iso, x0=E,args=(EI,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2,))
-    #E = np.min((EI,np.max((0,E))))
-    O = EI - E
+    E=optimize.fmin(func=OptFun_Iso, x0=E,args=(EO,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2,))
+    #E = np.min((EO,np.max((0,E))))
+    O = EO - E
     output, df, df_O18, df_H2 = RunModel(E,O,k_ini,H2_ini,O18_ini,StartDate,df,df_O18,df_H2,pars,p_O18,p_H2)
     RMSE_O18=ObFun_Iso(pond,output,'O18')/np.abs(pond['O18'].mean())
     RMSE_H2=ObFun_Iso(pond,output,'H2')/np.abs(pond['H2'].mean())
@@ -335,29 +352,29 @@ elif ShallIOptimize==1:
 
     numday=df.index[-1].to_julian_date()-df.index[0].to_julian_date()
     k_fin=df['k'][-1]
-    outEI={}
-    outEI['RMSE_level']=RMSE1
-    outEI['RMSE_iso']=RMSE2
-    outEI['E (mm/d)']=E
-    outEI['O (mm/d)']=O
-    outEI['E (mm)']=E*numday
-    outEI['O (mm)']=O*numday
-    outEI['Number of days']=numday
+    outEO={}
+    outEO['RMSE_level']=RMSE1
+    outEO['RMSE_iso']=RMSE2
+    outEO['E (mm/d)']=E
+    outEO['O (mm/d)']=O
+    outEO['E (mm)']=E*numday
+    outEO['O (mm)']=O*numday
+    outEO['Number of days']=numday
     P=(df['P'][1:]*df['dt'][1:]).sum()/numday
-    outEI['P (mm/d)']=P
-    outEI['P (mm)']=P*numday
-    outEI['Sim_deltaStorage (mm)']=(E+O-P)*numday
-    outEI['Obs_deltaStorage (mm)']=1000*(k_ini-k_fin)
-    outEI['k ini (mm)']=k_ini*1000
-    outEI['k fin (mm)']=k_fin*1000
-    outEI['Pond area ini (m2)']=PondDAV(pars,k=k_ini)[1]
-    outEI['Pond area fin (m2)']=PondDAV(pars,k=k_fin)[1]
-    outEI=pandas.DataFrame(data=outEI,index=np.array(['Simulation:']))
+    outEO['P (mm/d)']=P
+    outEO['P (mm)']=P*numday
+    outEO['Sim_deltaStorage (mm)']=(E+O-P)*numday
+    outEO['Obs_deltaStorage (mm)']=1000*(k_ini-k_fin)
+    outEO['k ini (mm)']=k_ini*1000
+    outEO['k fin (mm)']=k_fin*1000
+    outEO['Pond area ini (m2)']=PondDAV(pars,k=k_ini)[1]
+    outEO['Pond area fin (m2)']=PondDAV(pars,k=k_fin)[1]
+    outEO=pandas.DataFrame(data=outEO,index=np.array(['Simulation:']))
 
 
     # Save result
     writer=pandas.ExcelWriter('Output.xlsx')
-    outEI.transpose().to_excel(writer,'Outputs')
+    outEO.transpose().to_excel(writer,'Outputs')
     output.to_excel(writer,'Timeseries')
     writer.save()
    
@@ -380,7 +397,6 @@ elif ShallIOptimize==2:
         
         fn=[str(sensi.index[i])+'Sensitivity.txt'][0]
         print fn
-        print(ParMat)
 
         f=open(fn,'w')
 
@@ -390,7 +406,7 @@ elif ShallIOptimize==2:
         labels=[Label1, Label2, Label3]
         mytitle=sensi.iloc[i].Title.strip('"')
         # Perform sensitivity analysis
-        EI=E+O
+        EO=E+O
         par_values=sensi[['Lower','Middle','Upper']].iloc[i].values
         for j in range(3):
             f.write('%.3f\n'%float(par_values[j]))
@@ -404,8 +420,8 @@ elif ShallIOptimize==2:
                 sfact=ParMat.iloc[j]['sfact']
                 
                 # Run model
-                E=EI*EvapFraction
-                O=EI*(1.0-EvapFraction)
+                E=EO*EvapFraction
+                O=EO*(1.0-EvapFraction)
                 
                 dfM=df.copy()
                 dfM_O18=df_O18.copy()

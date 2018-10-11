@@ -53,30 +53,6 @@ df['P'] = df['P']/df['dt']
 
 dfPrecip=df.copy()
 
-# Truncate data to StartDate
-t=df.index.to_julian_date()
-tS=StartDate.to_julian_date()
-if len(np.where(df.index==StartDate)[0])!=0:
-    print "Start date coincides with driving data"
-    df=df[StartDate:]
-#    df_O18=df_O18[StartDate:]
-#    df_H2=df_H2[StartDate:]
-else:
-    print "Start date does not coincide with driving data"
-    # Find the row to replace with the start date:
-    i=np.where(df.index>StartDate)[0]
-    i=i[0]-1
-    if i < 0: 
-        print "ERROR: Start date is too early. Please adjust and rerun"
-        import sys
-        sys.exit(0)
-    df=df[i:]
-   
-    # Edit index:
-    t=df.index.values
-    t[0]=StartDate
-    df.index=t
-
 S=PlotStartDate
 E=PlotEndDate
 
